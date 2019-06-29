@@ -619,7 +619,7 @@ def remove_expired(state, currenttime):
     :return:
     """
     for snapshotconf in state[:]:
-        if currenttime > snapshotconf.expiration:
+        if currenttime is None or currenttime > snapshotconf.expiration:
             # Snapshot is outdated and must be removed
             logger.info("{} is scheduled for removal".format(snapshotconf.snaplv))
             if snapshot_remove_before(snapshotconf):
@@ -698,6 +698,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rotating snapshot tooling for lvm thin snapshots')
     parser.add_argument('-m', '--mountall', help='Mount all snapshots from the state file', action='store_true')
     parser.add_argument('-l', '--list', help='List all snapshots from the state file', action='store_true')
+    parser.add_argument('-r', '--removeall', help='Remove all snapshots from the state file', action='store_true')
     parser.add_argument('-c', '--config', help='Config file location', nargs='?', default=CONFIGFILE)
     args = parser.parse_args()
     configfile = args.config
@@ -777,6 +778,10 @@ if __name__ == "__main__":
         elif args.list:
             logger.info("Listing all snapshots...")
             print_table(state)
+        elif args.removeall:
+            logger.info("Removing all snapshots...")
+            state = remove_expired(state, None)
+            save_state(statefile, state)
         else:
             cur_time = datetime.utcnow()
             expire_time = get_longest_expire(expiration_conf, cur_time)
