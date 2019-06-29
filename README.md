@@ -76,7 +76,6 @@ All other sections are considered to be snapshot definitions. For example:
 ```
 [home]
 mountoptions = discard,ro
-mount = /home
 vg = vg
 lv = tlv-home
 snapdir = /snapshots/home
@@ -86,7 +85,6 @@ nfsoptions = ro,async,wdelay,nohide,no_subtree_check
 ```
 This is a complete example of a snapshot definition.
 * **mountoptions**: The options given to `mount` for mounting the snapshots.
-* **mount**: the mount point of the original volume.
 * **vg**: The volume group containing the logical volumes.
 * **lv**: The original logical volume to be snapshotted.
 * **snapdir**: The directory to create mount points in for the snapshots.

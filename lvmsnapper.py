@@ -53,8 +53,7 @@ TIME = {
 LVM = "/sbin/lvm"
 
 # Data we need for snapshots
-SnapShot = namedtuple('SnapShot', ['mountpoint',
-                                   'mountopts',
+SnapShot = namedtuple('SnapShot', ['mountopts',
                                    'snapmount',
                                    'snaplv',
                                    'origlv',
@@ -160,17 +159,6 @@ def get_snapdirs(config_options):
     logger.info("Found {} snapshot configurations.".format(len(config_options.sections())))
     snapdirs = []
     for snapsec in config_options.sections():
-        # Check the mountpath option, OK if dir exists, else throw an error to user
-        try:
-            mountpath = config_options.get(snapsec, 'mount')
-        except configparser.NoOptionError:
-            logger.error("No mount option found in {}.".format(snapsec))
-            inc_errors()
-            continue
-        if not check_mount(mountpath):
-            logger.error("Mount path \"{}\" not an absolute mount point ".format(mountpath))
-            inc_errors()
-            continue
         # Check the mountoptions option, OK if the option exists, else set it to None
         try:
             mountoptions = config_options.get(snapsec, 'mountoptions')
@@ -225,8 +213,7 @@ def get_snapdirs(config_options):
         except configparser.NoOptionError:
             nfsoptions = None
         logger.info("Parsed snapshot dir {}".format(snapsec))
-        snapdirs.append({'mount': mountpath,
-                         'vg': vgoption,
+        snapdirs.append({'vg': vgoption,
                          'lv': lvoption,
                          'snapdir': snapdiroption,
                          'mountoptions': mountoptions,
@@ -539,7 +526,7 @@ def create_all_snapshots(snapshots_conf, expiration_time, current_time, state):
             snapshot_finish(snapshot)
             state.append(snapshot)
         else:
-            logger.error("Failed to create snapshot for {}".format(snapshot.mountpoint))
+            logger.error("Failed to create snapshot for {}".format(snapshot.origlv))
     return state
 
 
