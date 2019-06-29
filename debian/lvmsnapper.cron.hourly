@@ -6,5 +6,5 @@ SNAPPER=$(which lvmsnapper.py)
 
 if [ "$ENABLE" = '1' ]
 then
-	$SNAPPER
+	$SNAPPER >> /var/log/lvmsnapper/lvmsnapper.log 2>&1
 fi
