@@ -28,6 +28,7 @@ from logging import handlers
 import pickle
 import fcntl
 import argparse
+import texttable as tt
 
 # do nothing if True, useful for testing
 NOOP = False
@@ -626,6 +627,14 @@ def remove_expired(state, currenttime):
                     state.remove(snapshotconf)
     return state
 
+def print_table(state):
+    tab = tt.Texttable()
+    headings = ['VG', 'LV', 'Snap LV', 'Creation', 'Expiration']
+    tab.header(headings)
+    for snapshot in state:
+        tab.add_row([snapshot.vg, snapshot.origlv, snapshot.snaplv, snapshot.creationtime, snapshot.expiration])
+    s = tab.draw()
+    print(s)
 
 def get_state(statelocation):
     """
@@ -688,6 +697,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Rotating snapshot tooling for lvm thin snapshots')
     parser.add_argument('-m', '--mountall', help='Mount all snapshots from the state file', action='store_true')
+    parser.add_argument('-l', '--list', help='List all snapshots from the state file', action='store_true')
     parser.add_argument('-c', '--config', help='Config file location', nargs='?', default=CONFIGFILE)
     args = parser.parse_args()
     configfile = args.config
@@ -764,6 +774,9 @@ if __name__ == "__main__":
             logger.info("Recreating all snapshot mounts.")
             for snapshot in state:
                 snapshot_finish(snapshot)
+        elif args.list:
+            logger.info("Listing all snapshots...")
+            print_table(state)
         else:
             cur_time = datetime.utcnow()
             expire_time = get_longest_expire(expiration_conf, cur_time)
