@@ -87,7 +87,7 @@ This is a complete example of a snapshot definition.
 * **mountoptions**: The options given to `mount` for mounting the snapshots.
 * **vg**: The volume group containing the logical volumes.
 * **lv**: The original logical volume to be snapshotted.
-* **snapdir**: The directory to create mount points in for the snapshots.
+* **snapdir**: If specified, the directory to create mount points in for the snapshots.
 * **linkdir**: If specified, symlinks will be created in this directory 
     pointing to the mount directories.
 * **nfsexports**: If specified, the new mount will be exported to these

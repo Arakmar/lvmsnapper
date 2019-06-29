@@ -187,14 +187,13 @@ def get_snapdirs(config_options):
         # Check if a snapshotdir was supplied.
         try:
             snapdiroption = config_options.get(snapsec, 'snapdir')
+            if not check_snapdir(snapdiroption):
+                logger.error("Snapdir not an absolute directory: \"{}\".".format(snapdiroption))
+                inc_errors()
+                continue
         except configparser.NoOptionError:
-            logger.error("No snapdir option found in {}.".format(snapsec))
-            inc_errors()
-            continue
-        if not check_snapdir(snapdiroption):
-            logger.error("Snapdir not an absolute directory: \"{}\".".format(snapdiroption))
-            inc_errors()
-            continue
+            snapdiroption = None
+
         try:
             linkdiroption = config_options.get(snapsec, 'linkdir')
             if not os.path.exists(linkdiroption):
@@ -433,53 +432,56 @@ def snapshot_finish(snapshot):
     :param snapshot: SnapShot namedPickle
     :return: Whether successful
     """
+
     mount_device = os.path.join('/dev', snapshot.vg, snapshot.snaplv)
     activation_command = [LVM, "lvchange", "-ay", "-K", os.path.join(snapshot.vg, snapshot.snaplv)]
     subprocess.check_call(activation_command)
-    if not os.path.ismount(snapshot.snapmount):
-        uuid_command = ["/sbin/tune2fs", "-Utime", mount_device]
-        subprocess.check_call(uuid_command)
-    # create dir
-    logger.debug("Creating directory: {}".format(snapshot.snapmount))
-    if not os.path.isdir(snapshot.snapmount) and not NOOP:
-        os.mkdir(snapshot.snapmount)
-    # mounting
-    if snapshot.mountopts:
-        mount_opts = "-o" + snapshot.mountopts
-    else:
-        mount_opts = ''
-    mount_command = ['mount', mount_opts, mount_device, snapshot.snapmount]
-    logger.debug("Trying to mount with command: {}".format(' '.join(mount_command)))
-    if not os.path.ismount(snapshot.snapmount) and not NOOP:
-        try:
-            subprocess.check_call(mount_command)
-            mounted = True
-        except subprocess.CalledProcessError:
-            mounted = False
-    else:
-        # Fake correct mount
-        mounted = True
-    if mounted:
-        # create symlink
-        if snapshot.linkname:
+
+    if snapshot.snapmount:
+        if not os.path.ismount(snapshot.snapmount):
+            uuid_command = ["/sbin/tune2fs", "-Utime", mount_device]
+            subprocess.check_call(uuid_command)
+        # create dir
+        logger.debug("Creating directory: {}".format(snapshot.snapmount))
+        if not os.path.isdir(snapshot.snapmount) and not NOOP:
+            os.mkdir(snapshot.snapmount)
+        # mounting
+        if snapshot.mountopts:
+            mount_opts = "-o" + snapshot.mountopts
+        else:
+            mount_opts = ''
+        mount_command = ['mount', mount_opts, mount_device, snapshot.snapmount]
+        logger.debug("Trying to mount with command: {}".format(' '.join(mount_command)))
+        if not os.path.ismount(snapshot.snapmount) and not NOOP:
             try:
-                if not os.path.exists(snapshot.linkname) and not NOOP:
-                    os.symlink(snapshot.snapmount, snapshot.linkname)
-                logger.debug("Created symlink at {}.".format(snapshot.linkname))
-            except os.error:
-                logger.error("Failed to create symlink from {}.".format(snapshot.linkname))
-        if snapshot.nfsexports:
-            for export in snapshot.nfsexports:
-                exports_combined = ':'.join([export, snapshot.snapmount])
-                nfs_options = ''
-                if snapshot.nfsopts:
-                    nfs_options = '-o' + snapshot.nfsopts
-                nfs_command = ['exportfs', exports_combined, nfs_options]
-                logger.debug("Exporting nfs as: {}".format(' '.join(nfs_command)))
-                if not NOOP:
-                    subprocess.check_call(nfs_command)
-    else:
-        os.rmdir(snapshot.snapmount)
+                subprocess.check_call(mount_command)
+                mounted = True
+            except subprocess.CalledProcessError:
+                mounted = False
+        else:
+            # Fake correct mount
+            mounted = True
+        if mounted:
+            # create symlink
+            if snapshot.linkname:
+                try:
+                    if not os.path.exists(snapshot.linkname) and not NOOP:
+                        os.symlink(snapshot.snapmount, snapshot.linkname)
+                    logger.debug("Created symlink at {}.".format(snapshot.linkname))
+                except os.error:
+                    logger.error("Failed to create symlink from {}.".format(snapshot.linkname))
+            if snapshot.nfsexports:
+                for export in snapshot.nfsexports:
+                    exports_combined = ':'.join([export, snapshot.snapmount])
+                    nfs_options = ''
+                    if snapshot.nfsopts:
+                        nfs_options = '-o' + snapshot.nfsopts
+                    nfs_command = ['exportfs', exports_combined, nfs_options]
+                    logger.debug("Exporting nfs as: {}".format(' '.join(nfs_command)))
+                    if not NOOP:
+                        subprocess.check_call(nfs_command)
+        else:
+            os.rmdir(snapshot.snapmount)
 
 
 def create_all_snapshots(snapshots_conf, expiration_time, current_time, state):
@@ -502,10 +504,18 @@ def create_all_snapshots(snapshots_conf, expiration_time, current_time, state):
         else:
             nfsclients = None
         dirformat = current_time.strftime('@GMT-%Y.%m.%d-%H.%M.%S')
-        dirname = os.path.join(snapshotconf['snapdir'], dirformat)
-        linkname = os.path.join(snapshotconf['linkdir'], dirformat)
 
-        snapshot = SnapShot(mountpoint=snapshotconf['mount'],
+        if snapshotconf['snapdir']:
+            dirname = os.path.join(snapshotconf['snapdir'], dirformat)
+        else:
+            dirname = None
+
+        if snapshotconf['linkdir']:
+            linkname = os.path.join(snapshotconf['linkdir'], dirformat)
+        else:
+            linkname = None
+
+        snapshot = SnapShot(
                             mountopts=snapshotconf['mountoptions'],
                             snapmount=dirname,
                             snaplv=snapname,
@@ -539,33 +549,36 @@ def snapshot_remove_before(snapshot):
     :param snapshot:
     :return: True if the volume can be removed
     """
-    # exportfs doesn't seem to care if the directory unexported is an actual export
-    for export in snapshot.nfsexports:
-        exportcombined = ':'.join([export, snapshot.snapmount])
-        unexportcommand = ["/usr/sbin/exportfs", "-u", exportcombined]
-        logger.debug("Removing nfs export with: {}".format(' '.join(unexportcommand)))
-        try:
-            subprocess.check_call(unexportcommand)
-        except subprocess.CalledProcessError:
-            logger.error("Could not unexport the nfs export \"{}\", check manually".format(' '.join(unexportcommand)))
-            return False
+
+    if snapshot.nfsexports:
+        # exportfs doesn't seem to care if the directory unexported is an actual export
+        for export in snapshot.nfsexports:
+            exportcombined = ':'.join([export, snapshot.snapmount])
+            unexportcommand = ["/usr/sbin/exportfs", "-u", exportcombined]
+            logger.debug("Removing nfs export with: {}".format(' '.join(unexportcommand)))
+            try:
+                subprocess.check_call(unexportcommand)
+            except subprocess.CalledProcessError:
+                logger.error("Could not unexport the nfs export \"{}\", check manually".format(' '.join(unexportcommand)))
+                return False
     # remove the symlink if created
     if snapshot.linkname and os.path.islink(snapshot.linkname):
         os.remove(snapshot.linkname)
     # unmount the volume
-    if os.path.isdir(snapshot.snapmount):
-        if os.path.ismount(snapshot.snapmount):
-            unmountcommand = ["/bin/umount", snapshot.snapmount]
-            try:
-                subprocess.check_call(unmountcommand)
-            except subprocess.CalledProcessError:
-                logger.error("Unable to unmount \"{}\", please check manually for errors".format(snapshot.snapmount))
-                return False
+    if snapshot.snapmount:
+        if os.path.isdir(snapshot.snapmount):
+            if os.path.ismount(snapshot.snapmount):
+                unmountcommand = ["/bin/umount", snapshot.snapmount]
+                try:
+                    subprocess.check_call(unmountcommand)
+                except subprocess.CalledProcessError:
+                    logger.error("Unable to unmount \"{}\", please check manually for errors".format(snapshot.snapmount))
+                    return False
+            else:
+                logger.warn("Mount \"{}\" already unmounted".format(snapshot.snapmount))
+            os.rmdir(snapshot.snapmount)
         else:
-            logger.warn("Mount \"{}\" already unmounted".format(snapshot.snapmount))
-        os.rmdir(snapshot.snapmount)
-    else:
-        logger.warn("Mount directory \"{}\" of snapshot already removed".format(snapshot.snapmount))
+            logger.warn("Mount directory \"{}\" of snapshot already removed".format(snapshot.snapmount))
     return True
 
 
